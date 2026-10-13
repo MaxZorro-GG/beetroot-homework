@@ -6,13 +6,13 @@
 #include <Adafruit_SSD1306.h>
 
 // 1 = демо (12 с період, 3 с робота), 0 = реальний режим (1 година / 15 хв)
-#define FAST_DEMO 1
+#define demo 1
 
 struct Config {
-  // Час роботи і період (змінюється через FAST_DEMO)
-  static uint32_t PERIOD_S()  { return FAST_DEMO ? 12 : 3600; }
-  static uint32_t RUN_S()     { return FAST_DEMO ? 3  : 900; }
-  static uint32_t MIN_OFF_S() { return FAST_DEMO ? 4  : 600; }  // захист від повторного пуску
+  // Час роботи і період (змінюється через demo   )
+  static uint32_t PERIOD_S()  { return demo ? 12 : 3600; }
+  static uint32_t RUN_S()     { return demo ? 3  : 900; }
+  static uint32_t MIN_OFF_S() { return demo ? 4  : 600; }  // захист від повторного пуску
 
   static uint64_t PERIOD_US() { return (uint64_t)PERIOD_S() * 1000000ULL; }
   static uint64_t RUN_US()    { return (uint64_t)RUN_S() * 1000000ULL; }
