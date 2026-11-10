@@ -53,6 +53,9 @@ pio device monitor -b 115200
 > На моїй платі прошивка і монітор працюють через рідний порт **USB** (USB-Serial/JTAG),
 > консоль переключена в menuconfig: *ESP System Settings → Channel for console output → USB Serial/JTAG*.
 
+
+![Лог](photomonitor.png)
+
 ## Результат
 Фрагмент логу (закриваю датчик долонею і відкриваю):
 ```
