@@ -27,6 +27,7 @@
 #define ADC_MAX      4095.0f            // максимальне RAW значення для 12 біт
 #define AVG_N        16                 // кількість відліків для усереднення (зменшує шум)
 #define PERIOD_MS    100                // період вимірювань, мс
+#define MIN_CALI_MV  1                  // нижче цієї напруги похибку не рахуємо (ділення на ~0)
 
 static const char *TAG = "ADC";         // тег для логів
 
@@ -89,7 +90,7 @@ void app_main(void)
 
         // 5.4 Відносна похибка ручного обчислення відносно каліброваного, %
         //     (при U_cali ≈ 0 не ділимо на нуль)
-        float err = (u_cali > 1) ? fabsf(u_man - (float)u_cali) / (float)u_cali * 100.0f : 0.0f;
+        float err = (u_cali > MIN_CALI_MV) ? fabsf(u_man - (float)u_cali) / (float)u_cali * 100.0f : 0.0f;
 
         // 5.5 Виводимо рядок таблиці
         printf("%4d   %10.1f   %10d   %8.2f\n", raw, u_man, u_cali, err);

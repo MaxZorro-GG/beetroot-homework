@@ -17,6 +17,14 @@
 #define DUTY_ON    512                 // 50 % — найгучніше для зумера
 #define CON_UART   UART_NUM_0          // порт Serial Monitor
 #define KEY_MS     200                 // тривалість ноти в ручному режимі
+#define SOUND_PCT  90                  // скільки % тривалості ноти звучить звук (решта — тиша)
+#define MELODY_GAP_MS  1500            // пауза між мелодіями
+#define GAP_STEP_MS    50              // крок паузи (щоб швидко реагувати на 'm')
+#define IDLE_MS        50              // очікування в ручному режимі
+#define UART_TIMEOUT_MS 20             // таймаут читання клавіші
+#define UART_RX_BUF    256             // буфер прийому UART
+#define KEYS_STACK     3072            // стек задачі клавіатури
+#define KEYS_PRIO      5               // пріоритет задачі клавіатури
 
 // Частоти нот 4-ї октави, Гц (0 = пауза)
 #define C4 262
@@ -87,9 +95,9 @@ static void tone(int freq)
 static void play_note(int freq, int ms)
 {
     tone(freq);
-    vTaskDelay(pdMS_TO_TICKS(ms * 9 / 10));
+    vTaskDelay(pdMS_TO_TICKS(ms * SOUND_PCT / 100));
     tone(0);
-    vTaskDelay(pdMS_TO_TICKS(ms / 10));
+    vTaskDelay(pdMS_TO_TICKS(ms * (100 - SOUND_PCT) / 100));
 }
 
 // Клавіша -> частота (для ручного режиму)
@@ -107,7 +115,7 @@ static void keys_task(void *arg)
 {
     uint8_t ch;
     while (1) {
-        if (uart_read_bytes(CON_UART, &ch, 1, pdMS_TO_TICKS(20)) == 1) {
+        if (uart_read_bytes(CON_UART, &ch, 1, pdMS_TO_TICKS(UART_TIMEOUT_MS)) == 1) {
             if (ch == 'm') {                         // перемикання режиму
                 manual = !manual;
                 tone(0);
@@ -131,15 +139,15 @@ void app_main(void)
     buzzer_init();
 
     // Драйвер UART0 з буфером прийому — читаємо клавіші без буферизації stdin
-    ESP_ERROR_CHECK(uart_driver_install(CON_UART, 256, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_driver_install(CON_UART, UART_RX_BUF, 0, 0, NULL, 0));
 
     printf("\nСинтезатор. 'm' — перемкнути АВТО/РУЧНИЙ режим\n");
-    xTaskCreate(keys_task, "keys", 3072, NULL, 5, NULL);
+    xTaskCreate(keys_task, "keys", KEYS_STACK, NULL, KEYS_PRIO, NULL);
 
     int m = 0;
     while (1) {
         if (manual) {                                // у ручному режимі мелодії мовчать
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(IDLE_MS));
             continue;
         }
         const melody_t *mel = &melodies[m];
@@ -149,6 +157,7 @@ void app_main(void)
             play_note(mel->n[i].freq, mel->n[i].ms);
         }
         m = (m + 1) % LEN(melodies);
-        for (int t = 0; t < 30 && !manual; t++) vTaskDelay(pdMS_TO_TICKS(50));  // пауза 1.5 с
+        for (int t = 0; t < MELODY_GAP_MS / GAP_STEP_MS && !manual; t++)   // пауза між мелодіями
+            vTaskDelay(pdMS_TO_TICKS(GAP_STEP_MS));
     }
 }

@@ -9,10 +9,11 @@
 #define SMA_N       16              // розмір вікна ковзної середньої
 #define TH_ON       2200            // темніше -> LED увімк
 #define TH_OFF      2800            // світліше -> LED вимк (гістерезис 600)
+#define POLL_MS     50              // період опитування, мс (20 Гц)
 
 static int buf[SMA_N];              // кільцевий буфер відліків
 static int idx = 0, count = 0;
-static long sum = 0;                // сума значень у вікні
+static int sum = 0;                // сума значень у вікні
 
 // Додає новий відлік і повертає середнє за останні SMA_N значень
 static int sma_update(int x)
@@ -60,6 +61,6 @@ void app_main(void)
         }
 
         printf("raw=%4d sma=%4d led=%d\n", raw, avg, led_on);
-        vTaskDelay(pdMS_TO_TICKS(50));   // опитування 20 Гц
+        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
     }
 }

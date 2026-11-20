@@ -34,17 +34,19 @@
 #define ADC_MAX       4095                 // 12 біт
 #define AVG_N         8                    // усереднення від шуму
 #define PERIOD_MS     20                   // оновлення 50 разів на секунду
+#define LOG_EVERY     10                   // лог кожні 10 циклів = 200 мс
+#define SERVO_MAX_DEG 180.0f               // кут при SERVO_MAX_US
 
 static adc_oneshot_unit_handle_t adc;
 
 // Усереднене читання потенціометра (0..4095)
-static int read_pot(void)
+static uint32_t read_pot(void)
 {
-    int sum = 0;
-    for (int i = 0; i < AVG_N; i++) {
+    uint32_t sum = 0;
+    for (uint32_t i = 0; i < AVG_N; i++) {
         int r = 0;
         adc_oneshot_read(adc, POT_CH, &r);
-        sum += r;
+        sum += (uint32_t)r;
     }
     return sum / AVG_N;
 }
@@ -98,10 +100,10 @@ void app_main(void)
     printf("\nPOT    LED_duty(%%)   pulse(us)   angle(deg)\n");
     printf("-------------------------------------------\n");
 
-    int cnt = 0;
+    uint32_t cnt = 0;
     while (1) {
         // 3. Читаємо потенціометр
-        int pot = read_pot();
+        uint32_t pot = read_pot();
 
         // 4. Світлодіод: 0..4095 → duty 0..1023
         uint32_t duty_led = pot * LED_MAX / ADC_MAX;
@@ -109,17 +111,17 @@ void app_main(void)
         // 5. Серво: 0..4095 → імпульс 500..2500 мкс → duty при періоді 20 мс
         uint32_t us = SERVO_MIN_US + pot * (SERVO_MAX_US - SERVO_MIN_US) / ADC_MAX;
         uint32_t duty_srv = us * SERVO_MAX / SERVO_PERIOD_US;
-        float angle = (us - SERVO_MIN_US) * 180.0f / (SERVO_MAX_US - SERVO_MIN_US);
+        float angle = (us - SERVO_MIN_US) * SERVO_MAX_DEG / (SERVO_MAX_US - SERVO_MIN_US);
 
         // 6. Оновлюємо обидва виходи
         pwm_set(LEDC_CHANNEL_0, duty_led);
         pwm_set(LEDC_CHANNEL_1, duty_srv);
 
         // 7. Лог у серійну консоль раз на 200 мс
-        if (++cnt >= 10) {
+        if (++cnt >= LOG_EVERY) {
             cnt = 0;
-            printf("%4d   %10.1f   %9lu   %10.1f\n",
-                   pot, duty_led * 100.0f / LED_MAX,
+            printf("%4lu   %10.1f   %9lu   %10.1f\n",
+                   (unsigned long)pot, duty_led * 100.0f / LED_MAX,
                    (unsigned long)us, angle);
         }
         vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
