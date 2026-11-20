@@ -23,8 +23,6 @@ ESP32-S3 зчитує напругу з потенціометра (поділь
 GND ──┘
 ```
 
-Схема у Wokwi: https://wokwi.com/projects/481211335444535297
-
 <img src="wokwi.png" width="500">
 
 <img src="photo.jpg" width="400">
