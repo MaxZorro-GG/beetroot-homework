@@ -37,6 +37,9 @@ Adafruit_SSD1306 oled(128, 32, &Wire, -1);
 static hw_timer_t *periodTimer = nullptr;  // період (година)
 static hw_timer_t *runTimer    = nullptr;  // тривалість роботи (15 хв)
 
+// fanRunning пишуть і ISR таймерів, і loop (ручний пуск),
+// тому перевірку+зміну робимо в критичній секції під цим м'ютексом
+static portMUX_TYPE      fanMux     = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool     fanRunning = false;
 static volatile uint32_t cycles     = 0;
 static int64_t           lastStopUs = 0;
@@ -50,9 +53,14 @@ static void applyOutputs(bool running) {
 
 // Переривання періодичного таймера — запуск вентилятора
 void IRAM_ATTR onPeriod() {
-  if (fanRunning) return;          // уже працює — не перезапускаємо
+  portENTER_CRITICAL_ISR(&fanMux);
+  if (fanRunning) {                // уже працює — не перезапускаємо
+    portEXIT_CRITICAL_ISR(&fanMux);
+    return;
+  }
   fanRunning = true;
   cycles++;
+  portEXIT_CRITICAL_ISR(&fanMux);
   applyOutputs(true);
   if (runTimer) {
     timerWrite(runTimer, 0);
@@ -63,7 +71,9 @@ void IRAM_ATTR onPeriod() {
 
 // Переривання таймера тривалості — зупинка
 void IRAM_ATTR onRunEnd() {
+  portENTER_CRITICAL_ISR(&fanMux);
   fanRunning = false;
+  portEXIT_CRITICAL_ISR(&fanMux);
   applyOutputs(false);
 }
 
@@ -90,19 +100,29 @@ static bool buttonEdge() {
 
 // Ручний пуск з захистом
 static void manualStart() {
-  if (fanRunning) {
+  const bool tooSoon = lastStopUs &&
+      (esp_timer_get_time() - lastStopUs) < (int64_t)Config::MIN_OFF_S() * 1000000;
+
+  // Перевірка і встановлення атомарно: між ними не встигне спрацювати onPeriod
+  portENTER_CRITICAL(&fanMux);
+  const bool alreadyRunning = fanRunning;
+  const bool start = !alreadyRunning && !tooSoon;
+  if (start) {
+    fanRunning = true;
+    cycles++;
+  }
+  portEXIT_CRITICAL(&fanMux);
+
+  if (alreadyRunning) {
     rejected++;
     Serial.println("пуск відхилено: вже працює");
     return;
   }
-  if (lastStopUs &&
-      (esp_timer_get_time() - lastStopUs) < (int64_t)Config::MIN_OFF_S() * 1000000) {
+  if (tooSoon) {
     rejected++;
     Serial.println("пуск відхилено: рано після зупинки");
     return;
   }
-  fanRunning = true;
-  cycles++;
   applyOutputs(true);
   if (periodTimer) timerWrite(periodTimer, 0);   // скинути відлік періоду
   if (runTimer) {
@@ -114,9 +134,9 @@ static void manualStart() {
 }
 
 // Виведення стану на OLED
-static void draw() {
+static void draw(bool running) {
   uint32_t left = 0;
-  if (fanRunning && runTimer) {
+  if (running && runTimer) {
     uint64_t t = timerRead(runTimer);
     left = (t >= Config::RUN_US()) ? 0 : (Config::RUN_US() - t) / 1000000;
   } else if (periodTimer) {
@@ -128,7 +148,7 @@ static void draw() {
   oled.setTextColor(SSD1306_WHITE);
 
   oled.setTextSize(2);
-  const char *state = fanRunning ? "ON" : "OFF";
+  const char *state = running ? "ON" : "OFF";
   int16_t x1, y1;
   uint16_t w, h;
   oled.getTextBounds(state, 0, 0, &x1, &y1, &w, &h);
@@ -192,12 +212,17 @@ void loop() {
   // Кнопка ручного пуску
   if (buttonEdge()) manualStart();
 
+  // Знімок стану: далі в ітерації працюємо з одним значенням
+  portENTER_CRITICAL(&fanMux);
+  const bool running = fanRunning;
+  portEXIT_CRITICAL(&fanMux);
+
   // Зміна стану — звук і лог
-  if (fanRunning != lastRun) {
-    if (!fanRunning) lastStopUs = esp_timer_get_time();
-    lastRun = fanRunning;
+  if (running != lastRun) {
+    if (!running) lastStopUs = esp_timer_get_time();
+    lastRun = running;
     beep();
-    Serial.println(fanRunning ? "ON" : "OFF");
+    Serial.println(running ? "ON" : "OFF");
   }
 
   // Лог стану раз на секунду
@@ -205,12 +230,12 @@ void loop() {
   if (millis() - lastLog > 1000) {
     lastLog = millis();
     Serial.printf("%s лишилось %lu с\n",
-                  fanRunning ? "ON" : "OFF",
-                  (unsigned long)(fanRunning
+                  running ? "ON" : "OFF",
+                  (unsigned long)(running
                     ? (Config::RUN_US() - (runTimer ? timerRead(runTimer) : 0)) / 1000000
                     : (Config::PERIOD_US() - (periodTimer ? timerRead(periodTimer) : 0)) / 1000000));
   }
 
-  draw();
+  draw(running);
   delay(5);
 }
